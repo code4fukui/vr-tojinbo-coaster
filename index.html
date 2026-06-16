@@ -33,6 +33,19 @@ const vbmode = location.hash == "#vbmode";
 let context = null;
 let audionode = null;
 
+//screm audio
+const screamAudio = new Audio("./scream.mp3");
+screamAudio.preload = "auto";
+
+let hasScreamed = false;
+
+// coupling audio
+const flacAudio = new Audio("./coupling.flac");
+flacAudio.preload = "auto";
+flacAudio.volume = 0.5;
+
+let hasCoupled = false;
+
 const stop = async () => {
   if (!context) return;
   await context.close();
@@ -178,6 +191,8 @@ document.addEventListener('keydown', (event) => {
 			coasterState = STATE.RUNNING;
 			velocity = 0.00045; // 初速度（3/4）
 			startTime = performance.now(); // 発車時刻を記録
+			hasScreamed = false;
+  			hasCoupled  = false;
 			console.log("発車！");
 		} else if (coasterState === STATE.RUNNING) {
 			coasterState = STATE.STOPPED;
@@ -244,7 +259,7 @@ renderer.setAnimationLoop(() => {
 	const vmax = 0.0009; // 最大速度（3/4）
 
 	// 1周したことを検出
-	const hasLooped = prevProgress > 0.8 && progress < 0.2;
+	const hasLooped = prevProgress > 0.99 && progress < 0.2;
 	
 	// 1周したら自動停止してスタート地点に戻る
 	if (hasLooped && coasterState === STATE.RUNNING) {
@@ -272,8 +287,10 @@ renderer.setAnimationLoop(() => {
 		progress = progress % 1;
 
 		// ゴール直前（progress >= 0.96）で減速
+		// スタート直後（progress <= sp）で減速
 		const pp = 0.96;
-		if (progress >= pp) {
+		const sp = 0.03;
+		if (progress >= pp || progress <= sp) {
 			const slowfac = 0.95;
 			velocity = velocity * slowfac;
 		}
@@ -286,7 +303,7 @@ renderer.setAnimationLoop(() => {
 
 	// 移動中のみ速度を計算
 	if (coasterState === STATE.RUNNING) {
-		velocity -= tangent.y * 0.000000225 * delta; // 加速度係数（3/4）
+		velocity -= tangent.y * 0.000000338 * delta; // 加速度係数（3/4）
 		velocity = Math.max(vmin, Math.min(vmax, velocity));
 		// ゴール直前（progress >= 0.95） で減速
 			if (progress >= 0.95) {
@@ -314,6 +331,8 @@ renderer.setAnimationLoop(() => {
 				velocity = 0.00045; // 初速度（3/4）
 				startTime = time; // 発車時刻を記録
 				lookingUpTime = 0;
+				hasScreamed = false;
+  				hasCoupled  = false;
 				console.log("上を見つめて発車しました！");
 			} else {
 				// 進行状況を表示（0.1秒ごと）
@@ -400,8 +419,8 @@ renderer.setAnimationLoop(() => {
 	if (scene.userData.signControl) {
 		const signControl = scene.userData.signControl;
 		
-		// 発車から3秒経過したら「ゴール」に切り替え
-		if (coasterState === STATE.RUNNING && startTime > 0 && (time - startTime) >= 3000 && !signControl.isGoal) {
+		// 発車から5秒経過したら「ゴール」に切り替え
+		if (coasterState === STATE.RUNNING && startTime > 0 && (time - startTime) >= 5000 && !signControl.isGoal) {
 			signControl.updateTexture(signControl.texture, 'ゴール');
 			signControl.material.emissiveMap = signControl.texture;
 			signControl.isGoal = true;
@@ -457,8 +476,32 @@ renderer.setAnimationLoop(() => {
 	if (audionode) {
 		const vp = (velocity - vmin) / (vmax - vmin);
 		const pitch = 1 + vp;
-		const vol = vp > 0 ? 0.3 + vp * .3 : 0;
+
+		const vol = vp > 0 ? 0.3 + vp * .3 : 0.2;
 		audionode.setPitchVolume(pitch, vol);
+  		if (coasterState === STATE.RUNNING) {
+
+			const nearLoopExit = progress > curve.loopEnd - 0.045   && progress < curve.loopEnd ;
+	  		const SPEED_THRESHOLD = 0.58; 
+			const pp = 0.95
+			
+			
+	  		if (vp > SPEED_THRESHOLD || nearLoopExit) {
+	  		  if (!hasScreamed) {
+	  		    screamAudio.currentTime = 0; 
+	  		    screamAudio.play();
+	  		    hasScreamed = true;
+	  		  }
+	  		} else {
+	  		  hasScreamed = false;
+	  		}
+
+			if(!hasCoupled && progress >= pp){
+				flacAudio.currentTime = 0; // 毎回頭から再生したいなら
+				flacAudio.play();
+				hasCoupled = true;
+			}
+		}
 	}
 });
 </script>
